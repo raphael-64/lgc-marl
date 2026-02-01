@@ -18,7 +18,7 @@ import wandb
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.envs.overcooked_wrapper import make_overcooked_env
+from src.environments.overcooked_wrapper import make_overcooked_env
 from src.lgc_marl.marl_trainer import MARLTrainer
 from src.lgc_marl.graph_policy import GraphConditionedPolicy
 from src.graph_generation.graph_types import TaskGraph, Subtask, SubtaskType, GraphCandidate

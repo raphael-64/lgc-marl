@@ -17,7 +17,7 @@ import wandb
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.envs.overcooked_wrapper import make_overcooked_env
+from src.environments.overcooked_wrapper import make_overcooked_env
 
 logging.basicConfig(
     level=logging.INFO,
