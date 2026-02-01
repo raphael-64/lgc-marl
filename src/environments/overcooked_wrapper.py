@@ -26,6 +26,7 @@ class OvercookedGymWrapper(gym.Env):
         horizon: int = 400,
         reward_shaping: bool = True,
         reward_shaping_factor: float = 1.0,
+        render_mode: str = None,
     ):
         """
         Args:
@@ -33,8 +34,10 @@ class OvercookedGymWrapper(gym.Env):
             horizon: Maximum timesteps per episode
             reward_shaping: Whether to use dense reward shaping
             reward_shaping_factor: Multiplier for shaped rewards
+            render_mode: "human" or "rgb_array" for visualization
         """
         super().__init__()
+        self.render_mode = render_mode
 
         self.layout_name = layout_name
         self.horizon = horizon
@@ -154,8 +157,36 @@ class OvercookedGymWrapper(gym.Env):
 
     def render(self):
         """Render the environment."""
-        # Could implement pygame rendering here
-        pass
+        if self.render_mode is None:
+            return None
+
+        try:
+            import pygame
+            from overcooked_ai_py.visualization.state_visualizer import StateVisualizer
+
+            if not hasattr(self, '_visualizer'):
+                self._visualizer = StateVisualizer(tile_size=50)
+
+            state = self.base_env.state
+            if state is None:
+                return None
+
+            # Render to pygame surface
+            surface = self._visualizer.render_state(state, grid=self.mdp.terrain_mtx)
+
+            if self.render_mode == "rgb_array":
+                # Convert to numpy for GIF saving
+                return pygame.surfarray.array3d(surface).swapaxes(0, 1)
+            elif self.render_mode == "human":
+                if not hasattr(self, '_screen'):
+                    pygame.init()
+                    self._screen = pygame.display.set_mode(surface.get_size())
+                self._screen.blit(surface, (0, 0))
+                pygame.display.flip()
+                return surface
+        except Exception as e:
+            print(f"Render error: {e}")
+            return None
 
     def close(self):
         """Clean up."""

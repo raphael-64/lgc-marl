@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Parallel training script for LGC-MARL on Overcooked using Ray."""
+"""Scaled-down parallel training script for LGC-MARL on Overcooked using Ray."""
 
 import logging
 import os
@@ -22,7 +22,7 @@ from src.environments.overcooked_wrapper import make_overcooked_env
 from src.graph_generation.overcooked_planner import OvercookedGraphPlanner
 from src.lgc_marl.marl_trainer import MARLTrainer
 from src.lgc_marl.graph_policy import GraphConditionedPolicy
-from src.graph_generation.graph_types import GraphCandidate, TaskGraph
+from src.graph_generation.graph_types import GraphCandidate, TaskGraph, Subtask, SubtaskType
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 @ray.remote(
-    num_cpus=2,  # More CPU for env simulation
+    num_cpus=2,  # CPU for env simulation
     runtime_env={
         "pip": ["torch", "gymnasium", "overcooked-ai", "networkx", "numpy"]
     }
@@ -53,8 +53,6 @@ def train_candidate_remote(
     Returns: (performance_dict, policy_state_dict, origin)
     """
     # Reconstruct graph from dict
-    from src.graph_generation.graph_types import TaskGraph, Subtask, SubtaskType
-
     graph = TaskGraph()
     for st_dict in graph_dict["subtasks"]:
         subtask = Subtask(
@@ -88,8 +86,8 @@ def train_candidate_remote(
         metrics = trainer.train_episode(graph)
         metrics_history.append(metrics)
 
-        if (ep + 1) % 50 == 0:
-            recent = metrics_history[-50:]
+        if (ep + 1) % 25 == 0:
+            recent = metrics_history[-25:]
             avg_reward = sum(m["reward"] for m in recent) / len(recent)
             avg_deliveries = sum(m.get("deliveries", 0) for m in recent) / len(recent)
             print(f"    [{graph_dict['origin']}] Ep {ep+1}/{n_episodes}: reward={avg_reward:.2f}, deliveries={avg_deliveries:.1f}")
@@ -127,41 +125,35 @@ def graph_to_dict(graph: TaskGraph, origin: str) -> Dict:
 
 def run_evolution_parallel(
     layout: str = "cramped_room",
-    n_stages: int = 11,
+    n_stages: int = 6,
     model: str = "gpt-5.2",
-    device: str = "cuda" if torch.cuda.is_available() else "cpu",
+    device: str = "cpu",
     use_wandb: bool = True,
-    n_parallel: int = 4,  # Number of parallel workers
+    n_parallel: int = 4,
 ):
-    """Run progressive depth evolution with parallel candidate training."""
+    """Run progressive depth evolution with parallel candidate training (QUICK version)."""
 
     # Initialize Ray
-    # On Anyscale, ray.init() auto-connects to the cluster
-    # Locally, it creates a local cluster
     if not ray.is_initialized():
         if os.environ.get("ANYSCALE_SESSION_ID"):
-            # Running on Anyscale - connect to existing cluster
             ray.init()
             logger.info("Connected to Anyscale cluster")
         else:
-            # Local mode
-            ray.init(num_cpus=n_parallel, num_gpus=1 if device == "cuda" else 0)
-            logger.info(f"Started local Ray cluster with {n_parallel} CPUs")
+            ray.init(num_cpus=n_parallel * 2)
+            logger.info(f"Started local Ray cluster with {n_parallel * 2} CPUs")
 
-    # Stage configs - balanced for parallel training
-    # Total: ~28,000 episodes
+    # SCALED DOWN stage configs - ~6000 total episodes (vs ~28000 full)
     stage_configs = [
-        (12, 100),   # Stage 1: Wide exploration - 1200 ep
-        (8, 200),    # Stage 2: Narrowing - 1600 ep
-        (6, 300),    # Stage 3: Top 6 - 2400 ep
-        (4, 600),    # Stage 4: Top 4 - 3200 ep
-        (3, 100),   # Stage 5: Top 3 - 4500 ep
-        (2, 200),   # Stage 6: Final 2 - 5000 ep
-        (1, 4000),   # Stage 7: Champion deep polish - 5000 ep
+        (8, 75),    # Stage 1: Wide exploration - 600 ep
+        (6, 150),   # Stage 2: Narrowing - 900 ep
+        (4, 200),   # Stage 3: Top 4 - 800 ep
+        (3, 300),   # Stage 4: Top 3 - 900 ep
+        (2, 400),   # Stage 5: Final 2 - 800 ep
+        (1, 2000),  # Stage 6: Champion polish - 2000 ep
     ][:n_stages]
 
     logger.info("=" * 60)
-    logger.info("LGC-MARL Overcooked Training (PARALLEL)")
+    logger.info("LGC-MARL Overcooked Training (PARALLEL - QUICK)")
     logger.info("=" * 60)
     logger.info(f"Layout: {layout}")
     logger.info(f"Model: {model}")
@@ -178,8 +170,9 @@ def run_evolution_parallel(
                 "stages": stage_configs,
                 "parallel": True,
                 "n_parallel": n_parallel,
+                "quick": True,
             },
-            tags=["parallel"],
+            tags=["parallel", "quick"],
         )
 
     weave.init("lgc-marl-overcooked")
@@ -204,7 +197,7 @@ def run_evolution_parallel(
 
     task = "Make and serve onion soup"
     global_step = 0
-    best_policy_state = None  # Track best policy across stages
+    best_policy_state = None
 
     # Generate initial candidates
     logger.info(f"\nGenerating initial graphs...")
@@ -222,9 +215,8 @@ def run_evolution_parallel(
         if use_wandb:
             wandb.log({"stage": stage_idx + 1}, step=global_step)
 
-        # ALL training runs on workers (head node is CPU-only coordinator)
-        # Parallel if 4+ candidates, otherwise sequential on workers
-        run_parallel = (n_candidates >= 4)
+        # Parallel if 3+ candidates
+        run_parallel = (n_candidates >= 3)
 
         if run_parallel:
             logger.info(f"  Running {n_candidates} candidates in PARALLEL on workers")
@@ -254,8 +246,7 @@ def run_evolution_parallel(
             ]
             results = ray.get(futures)
         else:
-            # Run one at a time on workers (sequential but still on GPU workers)
-            # Each candidate builds on the previous best policy
+            # Run one at a time on workers (sequential but still on workers)
             results = []
             seq_best_reward = -float('inf')
             for gd in graph_dicts:
@@ -271,7 +262,6 @@ def run_evolution_parallel(
                 )
                 result = ray.get(future)
                 results.append(result)
-                # Update best_policy_state after each sequential candidate
                 perf, policy_state, origin = result
                 logger.info(f"    {origin}: reward={perf['avg_reward']:.2f}")
                 if perf['avg_reward'] > seq_best_reward:
@@ -285,7 +275,6 @@ def run_evolution_parallel(
             logger.info(f"  {origin}: reward={perf['avg_reward']:.2f}, "
                        f"deliveries={perf['avg_deliveries']:.1f}")
 
-            # Track best policy
             if perf['avg_reward'] > best_reward:
                 best_reward = perf['avg_reward']
                 best_policy_state = policy_state
@@ -356,6 +345,17 @@ def run_evolution_parallel(
     logger.info(f"\nBest graph:")
     logger.info(best.graph.to_prompt_string())
 
+    # Save locally
+    save_path = f"checkpoints/lgc_parallel_quick_{layout}.pt"
+    os.makedirs("checkpoints", exist_ok=True)
+    torch.save({
+        "model_state_dict": best_policy_state,
+        "obs_dim": obs_dim,
+        "action_dim": action_dim,
+        "n_agents": n_agents,
+    }, save_path)
+    logger.info(f"\nSaved to {save_path}")
+
     if use_wandb:
         wandb.log({
             "final_reward": best.performance["avg_reward"],
@@ -377,9 +377,9 @@ def run_evolution_parallel(
             }, policy_path)
 
             artifact = wandb.Artifact(
-                name=f"policy-{layout}-parallel",
+                name=f"policy-{layout}-parallel-quick",
                 type="model",
-                description=f"Trained policy for {layout} (parallel training)",
+                description=f"Trained policy for {layout} (quick parallel training)",
                 metadata={
                     "best_reward": best.performance["avg_reward"],
                     "best_deliveries": best.performance["avg_deliveries"],
@@ -402,7 +402,7 @@ def run_evolution_parallel(
             with open(graphs_path, "w") as f:
                 json.dump(graphs_data, f, indent=2)
 
-            graphs_artifact = wandb.Artifact(name=f"graphs-{layout}-parallel", type="task_graphs")
+            graphs_artifact = wandb.Artifact(name=f"graphs-{layout}-parallel-quick", type="task_graphs")
             graphs_artifact.add_file(graphs_path)
             wandb.log_artifact(graphs_artifact)
 
@@ -418,10 +418,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--layout", default="cramped_room", help="Overcooked layout")
     parser.add_argument("--model", default="gpt-5.2", help="LLM model")
-    parser.add_argument("--stages", type=int, default=7, help="Number of evolution stages")
+    parser.add_argument("--stages", type=int, default=6, help="Number of evolution stages")
     parser.add_argument("--parallel", type=int, default=4, help="Number of parallel workers")
     parser.add_argument("--no-wandb", action="store_true", help="Disable wandb")
-    parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument("--device", default="cpu")
     args = parser.parse_args()
 
     run_evolution_parallel(

@@ -1,7 +1,7 @@
-name: lgc-marl-overcooked
+name: lgc-marl-overcooked-quick
 
-# Use Ray image with CUDA support
-image_uri: anyscale/ray:2.43.0-slim-py312-cu125
+# Use Ray image (no CUDA needed - CPU only)
+image_uri: anyscale/ray:2.43.0-slim-py312
 
 # Compute configuration - CPU only (model is tiny, env is CPU-bound)
 compute_config:
@@ -10,7 +10,7 @@ compute_config:
   worker_nodes:
     - instance_type: m5.2xlarge # 8 CPU each, no GPU needed
       min_nodes: 4
-      max_nodes: 12
+      max_nodes: 8
       market_type: ON_DEMAND
 
 # Working directory (uploaded to cluster)
@@ -21,10 +21,10 @@ env_vars:
   WANDB_API_KEY: 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
   OPENAI_API_KEY: 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
 
-# Cloud - leave empty for org default, or use cloud name (not ID)
+# Cloud - leave empty for org default
 cloud:
 
-# Entry point - install deps then run
-entrypoint: pip install torch wandb weave openai gymnasium overcooked-ai python-dotenv omegaconf hydra-core networkx && python scripts/train_overcooked_parallel.py --stages 7 --device cpu --parallel 12
+# Entry point
+entrypoint: pip install torch wandb weave openai gymnasium overcooked-ai python-dotenv omegaconf hydra-core networkx && python scripts/train_overcooked_parallel_quick.py --stages 6 --device cpu --parallel 8 --model gpt-5.2
 
 max_retries: 0
