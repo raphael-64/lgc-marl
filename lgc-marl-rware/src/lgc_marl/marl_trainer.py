@@ -34,6 +34,7 @@ class RolloutBuffer:
     total_reward: float = 0.0
     success: bool = False
     episode_length: int = 0
+    deliveries: int = 0
 
     def __post_init__(self):
         """Initialize per-agent storage."""
@@ -79,6 +80,7 @@ class RolloutBuffer:
         self.total_reward = 0.0
         self.success = False
         self.episode_length = 0
+        self.deliveries = 0
 
 
 class MARLTrainer:
@@ -185,6 +187,7 @@ class MARLTrainer:
                 "reward": self.buffer.total_reward,
                 "success": self.buffer.success,
                 "episode_length": self.buffer.episode_length,
+                "deliveries": self.buffer.deliveries,
                 **metrics,
             }
             trajectory.append(ep_metrics)
@@ -261,6 +264,7 @@ class MARLTrainer:
                 episode_stats = info.get("episode_stats", {})
                 deliveries = episode_stats.get("deliveries", info.get("deliveries", 0))
                 self.buffer.success = deliveries > 0
+                self.buffer.deliveries = deliveries
                 break
 
     def _compute_gae(self) -> Tuple[torch.Tensor, torch.Tensor]:

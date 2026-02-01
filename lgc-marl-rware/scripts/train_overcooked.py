@@ -86,9 +86,9 @@ def run_evolution(
     # Stage configs: (n_candidates, n_episodes_per_candidate)
     # Need 500+ episodes to learn full soup delivery sequence
     stage_configs = [
-        (6, 100),   # Stage 1: Wide exploration
-        (4, 300),   # Stage 2: Narrower, deeper
-        (2, 600),   # Stage 3: Final candidates, full training
+        (6, 200),   # Stage 1: Wide exploration
+        (4, 500),   # Stage 2: Narrower, deeper
+        (2, 1000),  # Stage 3: Final candidates, full training
     ][:n_stages]
 
     logger.info("=" * 60)
@@ -111,7 +111,7 @@ def run_evolution(
         )
 
     # Create environment
-    env = make_overcooked_env(layout_name=layout, horizon=400, reward_shaping=True)
+    env = make_overcooked_env(layout_name=layout, horizon=400, reward_shaping=True, reward_shaping_factor=0.1)
     env_state = env.get_env_state()
 
     logger.info(f"\nEnvironment:")

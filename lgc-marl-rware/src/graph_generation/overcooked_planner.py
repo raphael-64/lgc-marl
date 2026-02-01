@@ -22,6 +22,31 @@ from .prompts import (
     OVERCOOKED_NOVEL_GRAPH_PROMPT,
 )
 
+CRITIC_PROMPT = """You are a critic evaluating task graphs for the Overcooked cooking game.
+
+A VALID graph for making soup must have these task types:
+- get_ingredient: Pick up onion (need 3 total)
+- put_in_pot: Place onion in pot (need 3 total)
+- wait_cooking: Wait for soup to cook (need at least 1)
+- get_dish: Pick up a dish (need at least 1)
+- plate_soup: Take soup from pot onto dish (need at least 1)
+- serve: Deliver to serving location (need at least 1)
+
+A DEGENERATE graph has:
+- Only "navigate" tasks
+- Missing critical steps (no serve, no plate_soup, no get_ingredient)
+- Less than 6 meaningful tasks
+
+## GRAPH TO EVALUATE
+{graph}
+
+## VERDICT
+Respond with ONLY valid JSON:
+```json
+{{"valid": true/false, "reason": "brief explanation"}}
+```
+"""
+
 logger = logging.getLogger(__name__)
 
 
@@ -104,6 +129,44 @@ class OvercookedGraphPlanner:
             "terrain": terrain_str,
             "orders": orders_str,
         }
+
+    def _critic_validate(self, graph: TaskGraph) -> bool:
+        """Use LLM critic to reject degenerate graphs."""
+        graph_str = graph.to_prompt_string()
+
+        # Quick heuristic check first - reject obviously bad graphs
+        task_types = [s.task_type.value for s in graph.subtasks.values()]
+        navigate_count = task_types.count("navigate")
+        if navigate_count > len(task_types) * 0.5:
+            logger.warning(f"Critic rejected: >50% navigate tasks ({navigate_count}/{len(task_types)})")
+            return False
+
+        # Check for essential task types
+        essential = {"get_ingredient", "put_in_pot", "serve"}
+        present = set(task_types)
+        if not essential.intersection(present):
+            logger.warning(f"Critic rejected: missing essential tasks (has: {present})")
+            return False
+
+        # LLM critic for more nuanced validation
+        prompt = CRITIC_PROMPT.format(graph=graph_str)
+        try:
+            response = self._generate(prompt, operation="critic")
+
+            # Parse response
+            json_match = re.search(r'\{[^}]+\}', response)
+            if json_match:
+                result = json.loads(json_match.group(0))
+                is_valid = result.get("valid", False)
+                reason = result.get("reason", "unknown")
+                if not is_valid:
+                    logger.warning(f"Critic rejected: {reason}")
+                return is_valid
+        except Exception as e:
+            logger.warning(f"Critic failed, using heuristic: {e}")
+
+        # Fallback: accept if heuristics passed
+        return True
 
     def _parse_graph_response(self, response: str, n_agents: int = 2) -> TaskGraph:
         """Parse LLM response into TaskGraph."""
