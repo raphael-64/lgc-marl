@@ -31,7 +31,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-@ray.remote(num_cpus=1, num_gpus=0.25)  # Each worker gets 1 CPU + 0.25 GPU (4 workers per GPU)
+@ray.remote(
+    num_cpus=1,
+    num_gpus=0.25,
+    runtime_env={
+        "pip": ["torch", "gymnasium", "overcooked-ai", "networkx", "numpy"]
+    }
+)
 def train_candidate_remote(
     graph_dict: Dict,
     n_episodes: int,
