@@ -70,12 +70,14 @@ class OvercookedGraphPlanner:
         model: str = "gpt-4o-mini",
         temperature: float = 0.7,
         use_local: bool = False,
-        max_retries: int = 3,
+        max_retries: int = 5,
+        critic_retries: int = 3,
     ):
         self.model = model
         self.temperature = temperature
         self.use_local = use_local
         self.max_retries = max_retries
+        self.critic_retries = critic_retries  # Extra retries if critic rejects
 
         if use_local:
             try:
@@ -95,6 +97,16 @@ class OvercookedGraphPlanner:
 
     def _generate(self, prompt: str, operation: str = "generate") -> str:
         """Generate response from LLM. Weave auto-tracks OpenAI calls."""
+        # Wrap with weave.op if available for explicit tracing
+        if WEAVE_AVAILABLE and not hasattr(self, '_generate_traced'):
+            self._generate_traced = weave.op()(self._generate_impl)
+
+        if hasattr(self, '_generate_traced'):
+            return self._generate_traced(prompt, operation)
+        return self._generate_impl(prompt, operation)
+
+    def _generate_impl(self, prompt: str, operation: str = "generate") -> str:
+        """Actual LLM generation logic."""
         if self.client:
             is_new_model = any(x in self.model for x in ["gpt-4.1", "gpt-5", "o1", "o3"])
 
@@ -410,15 +422,29 @@ class OvercookedGraphPlanner:
             failure_patterns=insights.get("failure_patterns", "None yet"),
         )
 
-        for attempt in range(self.max_retries):
+        total_attempts = self.max_retries + self.critic_retries
+        for attempt in range(total_attempts):
             try:
+                orig_temp = self.temperature
+                if attempt > self.max_retries:
+                    self.temperature = min(1.0, self.temperature + 0.1)
+
                 response = self._generate(prompt)
+                self.temperature = orig_temp
+
                 graph = self._parse_graph_response(response, n_agents)
 
                 is_valid, errors = graph.validate()
-                if not is_valid and attempt < self.max_retries - 1:
+                if not is_valid:
+                    logger.warning(f"Crossover invalid (attempt {attempt + 1}): {errors}")
                     continue
 
+                # Critic validation
+                if not self._critic_validate(graph):
+                    logger.warning(f"Crossover rejected by critic (attempt {attempt + 1}/{total_attempts})")
+                    continue
+
+                logger.info(f"Crossover accepted after {attempt + 1} attempts")
                 return GraphCandidate(
                     graph=graph,
                     origin="crossover",
@@ -429,10 +455,11 @@ class OvercookedGraphPlanner:
             except Exception as e:
                 logger.error(f"Crossover failed (attempt {attempt + 1}): {e}")
 
-        # Fallback: return copy of better parent
-        better = parent1 if parent1_perf.get("avg_reward", 0) >= parent2_perf.get("avg_reward", 0) else parent2
+        # Fallback: use known-good fallback graph
+        logger.warning(f"Crossover exhausted all {total_attempts} attempts, using fallback")
+        fallback = self._create_fallback_graph(env_state, "pipeline")
         return GraphCandidate(
-            graph=better.graph,
+            graph=fallback,
             origin="crossover_fallback",
             parent_ids=[parent1.candidate_id, parent2.candidate_id],
             generation=max(parent1.generation, parent2.generation) + 1,
@@ -446,6 +473,7 @@ class OvercookedGraphPlanner:
     ) -> GraphCandidate:
         """Make targeted improvements to a graph."""
         n_agents = insights.get("n_agents", 2)
+        env_state = insights.get("env_state", {})
 
         prompt = OVERCOOKED_MUTATION_PROMPT.format(
             parent_perf=parent_perf.get("avg_reward", 0),
@@ -453,15 +481,30 @@ class OvercookedGraphPlanner:
             failure_analysis=parent_perf.get("analysis", {}).get("failures", "None identified"),
         )
 
-        for attempt in range(self.max_retries):
+        total_attempts = self.max_retries + self.critic_retries
+        for attempt in range(total_attempts):
             try:
+                # Increase temperature slightly on retries to get more diverse outputs
+                orig_temp = self.temperature
+                if attempt > self.max_retries:
+                    self.temperature = min(1.0, self.temperature + 0.1)
+
                 response = self._generate(prompt)
+                self.temperature = orig_temp
+
                 graph = self._parse_graph_response(response, n_agents)
 
                 is_valid, errors = graph.validate()
-                if not is_valid and attempt < self.max_retries - 1:
+                if not is_valid:
+                    logger.warning(f"Mutation invalid (attempt {attempt + 1}): {errors}")
                     continue
 
+                # Critic validation - reject degenerate graphs
+                if not self._critic_validate(graph):
+                    logger.warning(f"Mutation rejected by critic (attempt {attempt + 1}/{total_attempts})")
+                    continue
+
+                logger.info(f"Mutation accepted after {attempt + 1} attempts")
                 return GraphCandidate(
                     graph=graph,
                     origin="mutation",
@@ -472,9 +515,11 @@ class OvercookedGraphPlanner:
             except Exception as e:
                 logger.error(f"Mutation failed (attempt {attempt + 1}): {e}")
 
-        # Fallback: return copy of parent
+        # Fallback: use a known-good fallback graph
+        logger.warning(f"Mutation exhausted all {total_attempts} attempts, using fallback")
+        fallback = self._create_fallback_graph(env_state, "alternating")
         return GraphCandidate(
-            graph=parent.graph,
+            graph=fallback,
             origin="mutation_fallback",
             parent_ids=[parent.candidate_id],
             generation=parent.generation + 1,

@@ -8,18 +8,13 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()
 
+# Initialize Weave FIRST before any OpenAI imports
+import weave
+
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import torch
 import wandb
-
-# Initialize Weave for LLM tracking
-try:
-    import weave
-    weave.init("lgc-marl-overcooked")
-    WEAVE_AVAILABLE = True
-except ImportError:
-    WEAVE_AVAILABLE = False
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -43,6 +38,8 @@ def train_candidate(
     n_episodes: int,
     device: str,
     lr: float = 3e-4,
+    log_to_wandb: bool = True,
+    global_step: int = 0,
 ) -> dict:
     """Train policy on a single graph candidate and return metrics."""
     trainer = MARLTrainer(
@@ -57,6 +54,17 @@ def train_candidate(
         metrics = trainer.train_episode(candidate.graph)
         metrics_history.append(metrics)
 
+        # Log every episode to wandb for smooth training curves
+        if log_to_wandb:
+            wandb.log({
+                "ep_reward": metrics["reward"],
+                "ep_deliveries": metrics.get("deliveries", 0),
+                "ep_length": metrics.get("episode_length", 0),
+                "policy_loss": metrics.get("policy_loss", 0),
+                "value_loss": metrics.get("value_loss", 0),
+                "entropy": metrics.get("entropy", 0),
+            }, step=global_step + ep)
+
         if (ep + 1) % 10 == 0:
             recent = metrics_history[-10:]
             avg_reward = sum(m["reward"] for m in recent) / len(recent)
@@ -69,6 +77,11 @@ def train_candidate(
         "avg_reward": sum(m["reward"] for m in recent) / len(recent),
         "avg_deliveries": sum(m.get("deliveries", 0) for m in recent) / len(recent),
         "success_rate": sum(1 for m in recent if m.get("deliveries", 0) > 0) / len(recent),
+        "avg_policy_loss": sum(m.get("policy_loss", 0) for m in recent) / len(recent),
+        "avg_value_loss": sum(m.get("value_loss", 0) for m in recent) / len(recent),
+        "avg_entropy": sum(m.get("entropy", 0) for m in recent) / len(recent),
+        "avg_episode_length": sum(m.get("episode_length", 0) for m in recent) / len(recent),
+        "full_history": metrics_history,  # Keep for analysis
     }
 
     return performance
@@ -84,11 +97,15 @@ def run_evolution(
     """Run progressive depth evolution on Overcooked."""
 
     # Stage configs: (n_candidates, n_episodes_per_candidate)
-    # Need 500+ episodes to learn full soup delivery sequence
+    # More stages for better evolution, heavy on later stages for overnight run
     stage_configs = [
-        (6, 200),   # Stage 1: Wide exploration
-        (4, 500),   # Stage 2: Narrower, deeper
-        (2, 1000),  # Stage 3: Final candidates, full training
+        (8, 200),    # Stage 1: Wide exploration
+        (6, 400),    # Stage 2: First cut
+        (5, 600),    # Stage 3: Deeper training
+        (4, 800),    # Stage 4: Narrowing
+        (3, 1200),   # Stage 5: Top 3
+        (2, 2000),   # Stage 6: Final candidates, full training
+        (1, 3000),   # Stage 7: Best candidate, polish
     ][:n_stages]
 
     logger.info("=" * 60)
@@ -109,6 +126,10 @@ def run_evolution(
                 "stages": stage_configs,
             },
         )
+
+    # Init weave after wandb for LLM call tracing
+    weave.init("lgc-marl-overcooked")
+    logger.info("Weave initialized for LLM tracing")
 
     # Create environment
     env = make_overcooked_env(layout_name=layout, horizon=400, reward_shaping=True, reward_shaping_factor=0.1)
@@ -163,6 +184,8 @@ def run_evolution(
                 candidate=candidate,
                 n_episodes=n_episodes,
                 device=device,
+                log_to_wandb=use_wandb,
+                global_step=global_step,
             )
 
             candidate.performance = performance
@@ -174,10 +197,16 @@ def run_evolution(
 
             if use_wandb:
                 wandb.log({
+                    # Original metrics (backward compatible)
                     "reward": performance["avg_reward"],
                     "deliveries": performance["avg_deliveries"],
                     "success_rate": performance["success_rate"],
                     "candidate_origin": candidate.origin,
+                    # New aggregate metrics
+                    "avg_policy_loss": performance["avg_policy_loss"],
+                    "avg_value_loss": performance["avg_value_loss"],
+                    "avg_entropy": performance["avg_entropy"],
+                    "avg_ep_length": performance["avg_episode_length"],
                 }, step=global_step)
 
         # Select best candidates
@@ -261,8 +290,8 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--layout", default="cramped_room", help="Overcooked layout")
-    parser.add_argument("--model", default="gpt-4o", help="LLM model")
-    parser.add_argument("--stages", type=int, default=3, help="Number of evolution stages")
+    parser.add_argument("--model", default="gpt-5.2", help="LLM model")
+    parser.add_argument("--stages", type=int, default=7, help="Number of evolution stages")
     parser.add_argument("--no-wandb", action="store_true", help="Disable wandb")
     parser.add_argument("--device", default="cpu", help="Device (cpu/cuda)")
     args = parser.parse_args()
