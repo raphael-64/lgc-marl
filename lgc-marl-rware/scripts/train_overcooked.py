@@ -280,6 +280,63 @@ def run_evolution(
             "final_deliveries": best.performance["avg_deliveries"],
             "final_success_rate": best.performance["success_rate"],
         })
+
+        # Save policy checkpoint as artifact
+        import tempfile
+        import os
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Save policy weights
+            policy_path = os.path.join(tmpdir, "policy.pt")
+            torch.save({
+                "model_state_dict": policy.state_dict(),
+                "obs_dim": env._obs_shape_per_agent,
+                "action_dim": env.n_actions,
+                "n_agents": env.n_agents,
+            }, policy_path)
+
+            policy_artifact = wandb.Artifact(
+                name=f"policy-{layout}",
+                type="model",
+                description=f"Trained policy for {layout} layout",
+                metadata={
+                    "best_reward": best.performance["avg_reward"],
+                    "best_deliveries": best.performance["avg_deliveries"],
+                    "best_origin": best.origin,
+                }
+            )
+            policy_artifact.add_file(policy_path)
+            wandb.log_artifact(policy_artifact)
+            logger.info("Saved policy artifact to wandb")
+
+            # Save all candidate graphs with performance
+            graphs_path = os.path.join(tmpdir, "candidate_graphs.json")
+            graphs_data = []
+            for c in candidates:
+                if c.performance:
+                    graphs_data.append({
+                        "origin": c.origin,
+                        "generation": c.generation,
+                        "graph": c.graph.to_prompt_string(),
+                        "performance": {
+                            k: v for k, v in c.performance.items()
+                            if k != "full_history"  # Skip large history
+                        },
+                    })
+
+            import json
+            with open(graphs_path, "w") as f:
+                json.dump(graphs_data, f, indent=2)
+
+            graphs_artifact = wandb.Artifact(
+                name=f"graphs-{layout}",
+                type="task_graphs",
+                description=f"All candidate graphs for {layout} layout",
+            )
+            graphs_artifact.add_file(graphs_path)
+            wandb.log_artifact(graphs_artifact)
+            logger.info(f"Saved {len(graphs_data)} candidate graphs to wandb")
+
         wandb.finish()
 
     return best, policy
