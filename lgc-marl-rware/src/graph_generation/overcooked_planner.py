@@ -7,6 +7,12 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
+try:
+    import weave
+    WEAVE_AVAILABLE = True
+except ImportError:
+    WEAVE_AVAILABLE = False
+
 from .graph_types import GraphCandidate, Subtask, SubtaskType, TaskGraph
 from .prompts import (
     OVERCOOKED_INITIAL_GRAPH_PROMPT,
@@ -62,8 +68,8 @@ class OvercookedGraphPlanner:
             except ImportError:
                 raise ImportError("OpenAI not installed. Install with: pip install openai")
 
-    def _generate(self, prompt: str) -> str:
-        """Generate response from LLM."""
+    def _generate(self, prompt: str, operation: str = "generate") -> str:
+        """Generate response from LLM. Weave auto-tracks OpenAI calls."""
         if self.client:
             is_new_model = any(x in self.model for x in ["gpt-4.1", "gpt-5", "o1", "o3"])
 
@@ -78,6 +84,7 @@ class OvercookedGraphPlanner:
             else:
                 params["max_tokens"] = 2048
 
+            # Weave automatically tracks OpenAI calls when initialized
             response = self.client.chat.completions.create(**params)
             return response.choices[0].message.content
         else:
@@ -116,8 +123,11 @@ class OvercookedGraphPlanner:
 
             data = json.loads(json_str)
 
-            for subtask_data in data.get("subtasks", []):
+            for i, subtask_data in enumerate(data.get("subtasks", [])):
+                # Handle agent_id - could be string or int
                 agent_id = subtask_data.get("agent", 0)
+                if isinstance(agent_id, str):
+                    agent_id = int(agent_id) if agent_id.isdigit() else 0
                 if agent_id >= n_agents:
                     agent_id = agent_id % n_agents
 
@@ -128,8 +138,11 @@ class OvercookedGraphPlanner:
                     # Default to navigate for unknown types
                     task_type = SubtaskType.NAVIGATE
 
+                # Handle missing id - generate one
+                subtask_id = subtask_data.get("id") or subtask_data.get("name") or f"task_{i}"
+
                 subtask = Subtask(
-                    id=subtask_data["id"],
+                    id=subtask_id,
                     task_type=task_type,
                     agent_id=agent_id,
                     target=subtask_data.get("target"),

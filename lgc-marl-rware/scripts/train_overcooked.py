@@ -13,6 +13,14 @@ from omegaconf import DictConfig, OmegaConf
 import torch
 import wandb
 
+# Initialize Weave for LLM tracking
+try:
+    import weave
+    weave.init("lgc-marl-overcooked")
+    WEAVE_AVAILABLE = True
+except ImportError:
+    WEAVE_AVAILABLE = False
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.envs.overcooked_wrapper import make_overcooked_env
@@ -76,10 +84,11 @@ def run_evolution(
     """Run progressive depth evolution on Overcooked."""
 
     # Stage configs: (n_candidates, n_episodes_per_candidate)
+    # Need 500+ episodes to learn full soup delivery sequence
     stage_configs = [
-        (6, 50),   # Stage 1: Wide exploration, shallow training
-        (4, 100),  # Stage 2: Narrower, deeper
-        (2, 200),  # Stage 3: Final candidates, full training
+        (6, 100),   # Stage 1: Wide exploration
+        (4, 300),   # Stage 2: Narrower, deeper
+        (2, 600),   # Stage 3: Final candidates, full training
     ][:n_stages]
 
     logger.info("=" * 60)
