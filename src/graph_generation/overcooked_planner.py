@@ -198,7 +198,19 @@ class OvercookedGraphPlanner:
 
             data = json.loads(json_str)
 
-            for i, subtask_data in enumerate(data.get("subtasks", [])):
+            subtasks_raw = data.get("subtasks", [])
+            if not subtasks_raw:
+                raise ValueError("No subtasks in response")
+
+            for i, subtask_data in enumerate(subtasks_raw):
+                # Handle case where LLM returns strings instead of objects
+                if isinstance(subtask_data, str):
+                    logger.warning(f"Subtask {i} is string, not object: {subtask_data}")
+                    raise ValueError(f"Subtask is string not object: {subtask_data}")
+
+                if not isinstance(subtask_data, dict):
+                    raise ValueError(f"Subtask is not a dict: {type(subtask_data)}")
+
                 # Handle agent_id - could be string or int
                 agent_id = subtask_data.get("agent", 0)
                 if isinstance(agent_id, str):

@@ -272,12 +272,27 @@ Observed: {parent2_strengths}
 
 Keep structures both parents share. Combine complementary strengths.
 
-## OUTPUT FORMAT
+## SUBTASK TYPES (use ONLY these)
+- get_ingredient: Pick up onion from dispenser
+- put_in_pot: Place onion in pot
+- wait_cooking: Wait for soup to cook
+- get_dish: Pick up dish from dispenser
+- plate_soup: Take soup from pot onto dish
+- serve: Deliver to serving location
+
+## OUTPUT FORMAT - MUST use this exact structure
 ```json
-{{"subtasks": [...]}}
+{{
+  "subtasks": [
+    {{"id": "get_onion_1", "type": "get_ingredient", "agent": 0, "target": "onion", "dependencies": []}},
+    {{"id": "put_pot_1", "type": "put_in_pot", "agent": 0, "target": "pot", "dependencies": ["get_onion_1"]}},
+    {{"id": "get_onion_2", "type": "get_ingredient", "agent": 1, "target": "onion", "dependencies": []}},
+    ...more subtasks with same structure...
+  ]
+}}
 ```
 
-Generate the crossover:
+Generate the crossover (8-12 subtasks for a complete soup):
 """
 
 OVERCOOKED_MUTATION_PROMPT = """Improve this cooking coordination strategy based on observed failures.
@@ -295,12 +310,26 @@ OVERCOOKED_MUTATION_PROMPT = """Improve this cooking coordination strategy based
 4. Change role assignments
 5. Add explicit wait/coordination points
 
-## OUTPUT FORMAT
+## SUBTASK TYPES (use ONLY these)
+- get_ingredient: Pick up onion from dispenser
+- put_in_pot: Place onion in pot
+- wait_cooking: Wait for soup to cook
+- get_dish: Pick up dish from dispenser
+- plate_soup: Take soup from pot onto dish
+- serve: Deliver to serving location
+
+## OUTPUT FORMAT - MUST use this exact structure
 ```json
-{{"subtasks": [...]}}
+{{
+  "subtasks": [
+    {{"id": "get_onion_1", "type": "get_ingredient", "agent": 0, "target": "onion", "dependencies": []}},
+    {{"id": "put_pot_1", "type": "put_in_pot", "agent": 0, "target": "pot", "dependencies": ["get_onion_1"]}},
+    ...more subtasks with same structure...
+  ]
+}}
 ```
 
-Generate the mutated graph:
+Generate the mutated graph (8-12 subtasks for a complete soup):
 """
 
 OVERCOOKED_FIX_FAILURES_PROMPT = """This cooking strategy is failing badly. Make aggressive changes.
@@ -318,12 +347,26 @@ OVERCOOKED_FIX_FAILURES_PROMPT = """This cooking strategy is failing badly. Make
 
 Make SIGNIFICANT changes. Consider completely different role assignments.
 
-## OUTPUT FORMAT
+## SUBTASK TYPES (use ONLY these)
+- get_ingredient: Pick up onion from dispenser
+- put_in_pot: Place onion in pot
+- wait_cooking: Wait for soup to cook
+- get_dish: Pick up dish from dispenser
+- plate_soup: Take soup from pot onto dish
+- serve: Deliver to serving location
+
+## OUTPUT FORMAT - MUST use this exact structure
 ```json
-{{"subtasks": [...]}}
+{{
+  "subtasks": [
+    {{"id": "get_onion_1", "type": "get_ingredient", "agent": 0, "target": "onion", "dependencies": []}},
+    {{"id": "put_pot_1", "type": "put_in_pot", "agent": 0, "target": "pot", "dependencies": ["get_onion_1"]}},
+    ...more subtasks with same structure...
+  ]
+}}
 ```
 
-Generate the fixed graph:
+Generate the fixed graph (8-12 subtasks for a complete soup):
 """
 
 OVERCOOKED_NOVEL_GRAPH_PROMPT = """Generate a NOVEL cooking coordination strategy.
@@ -344,12 +387,26 @@ FAILURE patterns: {failure_patterns}
 - One-pot focus: both chefs on same soup, max speed
 - Speculative prep: start next soup while serving current
 
-## OUTPUT FORMAT
+## SUBTASK TYPES (use ONLY these)
+- get_ingredient: Pick up onion from dispenser
+- put_in_pot: Place onion in pot
+- wait_cooking: Wait for soup to cook
+- get_dish: Pick up dish from dispenser
+- plate_soup: Take soup from pot onto dish
+- serve: Deliver to serving location
+
+## OUTPUT FORMAT - MUST use this exact structure
 ```json
-{{"subtasks": [...]}}
+{{
+  "subtasks": [
+    {{"id": "get_onion_1", "type": "get_ingredient", "agent": 0, "target": "onion", "dependencies": []}},
+    {{"id": "put_pot_1", "type": "put_in_pot", "agent": 0, "target": "pot", "dependencies": ["get_onion_1"]}},
+    ...more subtasks with same structure...
+  ]
+}}
 ```
 
-Generate a novel graph:
+Generate a novel graph (8-12 subtasks for a complete soup):
 """
 
 # ============================================================================
