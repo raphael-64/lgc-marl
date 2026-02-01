@@ -1,0 +1,70 @@
+# Default configuration for LGC-MARL Progressive Depth Evolution
+
+# Weights & Biases
+wandb:
+  project: "lgc-marl-rware"
+  run_name: null  # Auto-generated if null
+  tags: ["progressive-depth", "rware"]
+
+# Weave
+weave:
+  project: "lgc-marl-rware"
+
+# Environment
+env:
+  name: "rware-small-4ag-v2"
+  max_steps: 500
+
+# Task
+task:
+  difficulty: "medium"  # easy, medium, hard
+
+# LLM
+llm:
+  model: "gpt-5.2"  # Flagship model. Alternatives: gpt-4.1 (cheaper), gpt-4.1-mini (fast)
+  temperature: 0.7
+  use_local: false
+  max_retries: 3
+
+# Policy Network
+# Note: obs_dim and action_dim are auto-detected from environment
+policy:
+  graph_dim: 64
+  hidden_dim: 128
+
+# MARL Training
+training:
+  lr: 0.0003
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_eps: 0.2
+  entropy_coef: 0.01
+  value_coef: 0.5
+  max_grad_norm: 0.5
+  steps_per_update: 128
+
+# Progressive Depth Evolution
+evolution:
+  stages:
+    - candidates: 8
+      episodes: 50
+    - candidates: 4
+      episodes: 150
+    - candidates: 2
+      episodes: 400
+    - candidates: 1
+      episodes: 400
+
+# Device
+device: "cuda"
+
+# Evaluation
+eval:
+  n_episodes: 20
+  deterministic: true
+
+# Checkpointing
+checkpoint:
+  save_dir: "./checkpoints"
+  save_best: true
+  save_every_stage: true
