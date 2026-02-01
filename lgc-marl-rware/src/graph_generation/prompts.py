@@ -206,55 +206,52 @@ Generate a novel graph:
 # OVERCOOKED PROMPTS
 # ============================================================================
 
-OVERCOOKED_INITIAL_GRAPH_PROMPT = """You are a task planner for the Overcooked cooking game. Two chefs must coordinate to prepare and serve soups as fast as possible.
+OVERCOOKED_INITIAL_GRAPH_PROMPT = """You are a task planner for the Overcooked cooking game. Two chefs (Agent 0 and Agent 1) must coordinate to prepare and serve soups.
 
 ## ENVIRONMENT - {layout}
-Grid layout:
 {terrain}
 Legend: O=onion dispenser, P=pot, S=serving location, D=dish dispenser, X=counter, space=walkable
 
-## CURRENT ORDER
-{orders}
-Each soup needs 3 onions in the pot, wait for cooking, then plate and serve.
+## ORDER: {orders}
+Recipe: 3 onions → pot → cook → plate → serve
 
-## STRATEGY HINT: {strategy}
-- role_based: One chef handles ingredients, other handles plating/serving
-- parallel_soups: Both chefs work on separate pots simultaneously
-- pipeline: Assembly line - one does early steps, other does later steps
-- zone_based: Each chef owns one side of the kitchen
-- helper: One chef is "main cook", other assists and handles overflow
-- alternating: Chefs take turns on each step to avoid collisions
+## YOUR STRATEGY: {strategy}
+YOU MUST FOLLOW THIS STRATEGY. Each strategy requires DIFFERENT task assignments:
 
-## SUBTASK TYPES FOR OVERCOOKED
-- get_ingredient: Pick up onion from dispenser (O)
-- put_in_pot: Place held onion in pot (P)
-- wait_cooking: Wait for soup to finish cooking
-- get_dish: Pick up dish from dispenser (D)
-- plate_soup: Take cooked soup from pot onto dish
-- serve: Deliver plated soup to serving location (S)
-- put_on_counter: Place item on counter for handoff
-- get_from_counter: Pick up item another chef left
+- role_based: Agent 0 does ALL ingredient work (get onions, put in pot). Agent 1 does ALL finishing work (get dish, plate, serve). Clear role separation.
+- parallel_soups: If 2 pots exist, each agent works their own pot independently. Agent 0 owns pot_0, Agent 1 owns pot_1.
+- pipeline: Assembly line. Agent 0 does steps 1-3 (get onions, put in pot, wait). Agent 1 does steps 4-6 (get dish, plate, serve).
+- zone_based: Agent 0 works left side of kitchen only. Agent 1 works right side only. Use counter handoffs between zones.
+- helper: Agent 0 is primary cook doing main tasks. Agent 1 only assists (fetches extra onions, clears path, handles overflow).
+- alternating: Agents take strict turns. Agent 0 does task 1, Agent 1 does task 2, Agent 0 does task 3, etc. Avoids collisions.
 
-## KEY COORDINATION CHALLENGES
-1. Narrow hallways cause collisions - stagger movements
-2. Only one chef can interact with each pot/dispenser at a time
-3. Handoffs via counter enable parallelism
-4. Timing matters - soup burns if left too long after cooking
+## SUBTASK TYPES
+- get_ingredient: Pick up onion from dispenser
+- put_in_pot: Place onion in pot
+- wait_cooking: Wait for soup to cook
+- get_dish: Pick up dish from dispenser
+- plate_soup: Take soup from pot onto dish
+- serve: Deliver to serving location
+- put_on_counter: Place item on counter (for handoffs)
+- get_from_counter: Pick up item from counter
 
 ## OUTPUT FORMAT
-Respond with ONLY a JSON block:
 ```json
 {{
   "subtasks": [
-    {{"id": "chef0_get_onion1", "type": "get_ingredient", "agent": 0, "target": "onion", "dependencies": []}},
-    {{"id": "chef0_put_pot", "type": "put_in_pot", "agent": 0, "target": "pot_0", "dependencies": ["chef0_get_onion1"]}},
-    {{"id": "chef1_get_onion2", "type": "get_ingredient", "agent": 1, "target": "onion", "dependencies": []}},
-    {{"id": "chef1_put_pot", "type": "put_in_pot", "agent": 1, "target": "pot_0", "dependencies": ["chef1_get_onion2", "chef0_put_pot"]}}
+    {{"id": "unique_id", "type": "subtask_type", "agent": 0, "target": "target", "dependencies": ["dep_id"]}},
+    ...
   ]
 }}
 ```
 
-Generate the task graph for making and serving one soup:
+IMPORTANT:
+- Generate 8-12 subtasks for a complete soup
+- Agent assignments MUST reflect the {strategy} strategy
+- DO NOT just assign tasks round-robin - think about the strategy!
+- Dependencies should reflect real task ordering (can't plate before cooking, etc.)
+
+Generate the task graph:
 """
 
 OVERCOOKED_CROSSOVER_PROMPT = """Combine the best features from two cooking coordination strategies.

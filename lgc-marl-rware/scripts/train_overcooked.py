@@ -252,7 +252,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--layout", default="cramped_room", help="Overcooked layout")
-    parser.add_argument("--model", default="gpt-4o-mini", help="LLM model")
+    parser.add_argument("--model", default="gpt-4o", help="LLM model")
     parser.add_argument("--stages", type=int, default=3, help="Number of evolution stages")
     parser.add_argument("--no-wandb", action="store_true", help="Disable wandb")
     parser.add_argument("--device", default="cpu", help="Device (cpu/cuda)")
