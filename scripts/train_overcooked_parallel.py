@@ -221,21 +221,23 @@ def run_evolution_parallel(
         if use_wandb:
             wandb.log({"stage": stage_idx + 1}, step=global_step)
 
-        # Decide whether to parallelize this stage
-        # Parallelize early stages (many candidates, fewer episodes)
-        # Parallelize any stage with 4+ candidates
-        use_parallel = (n_candidates >= 4)
+        # ALL training runs on workers (head node is CPU-only coordinator)
+        # Parallel if 4+ candidates, otherwise sequential on workers
+        run_parallel = (n_candidates >= 4)
 
-        if use_parallel:
-            logger.info(f"  Running {n_candidates} candidates in PARALLEL")
+        if run_parallel:
+            logger.info(f"  Running {n_candidates} candidates in PARALLEL on workers")
+        else:
+            logger.info(f"  Running {n_candidates} candidates SEQUENTIALLY on workers")
 
-            # Convert graphs to dicts for Ray serialization
-            graph_dicts = [
-                graph_to_dict(c.graph, c.origin)
-                for c in candidates[:n_candidates]
-            ]
+        # Convert graphs to dicts for Ray serialization
+        graph_dicts = [
+            graph_to_dict(c.graph, c.origin)
+            for c in candidates[:n_candidates]
+        ]
 
-            # Launch parallel training
+        if run_parallel:
+            # Launch all at once
             futures = [
                 train_candidate_remote.remote(
                     graph_dict=gd,
@@ -249,99 +251,53 @@ def run_evolution_parallel(
                 )
                 for gd in graph_dicts
             ]
-
-            # Collect results
             results = ray.get(futures)
-
-            # Update candidates with performance
-            best_reward = -float('inf')
-            for i, (perf, policy_state, origin) in enumerate(results):
-                candidates[i].performance = perf
-                logger.info(f"  {origin}: reward={perf['avg_reward']:.2f}, "
-                           f"deliveries={perf['avg_deliveries']:.1f}")
-
-                # Track best policy
-                if perf['avg_reward'] > best_reward:
-                    best_reward = perf['avg_reward']
-                    best_policy_state = policy_state
-
-                if use_wandb:
-                    wandb.log({
-                        "reward": perf["avg_reward"],
-                        "deliveries": perf["avg_deliveries"],
-                        "success_rate": perf["success_rate"],
-                        "candidate_origin": origin,
-                    }, step=global_step + i * n_episodes)
-
-            global_step += n_candidates * n_episodes
-
         else:
-            logger.info(f"  Running {n_candidates} candidates SEQUENTIALLY")
+            # Run one at a time on workers (sequential but still on GPU workers)
+            # Each candidate builds on the previous best policy
+            results = []
+            seq_best_reward = -float('inf')
+            for gd in graph_dicts:
+                future = train_candidate_remote.remote(
+                    graph_dict=gd,
+                    n_episodes=n_episodes,
+                    layout=layout,
+                    obs_dim=obs_dim,
+                    action_dim=action_dim,
+                    n_agents=n_agents,
+                    device=device,
+                    policy_state_dict=best_policy_state,
+                )
+                result = ray.get(future)
+                results.append(result)
+                # Update best_policy_state after each sequential candidate
+                perf, policy_state, origin = result
+                logger.info(f"    {origin}: reward={perf['avg_reward']:.2f}")
+                if perf['avg_reward'] > seq_best_reward:
+                    best_policy_state = policy_state
+                    seq_best_reward = perf['avg_reward']
 
-            # Create policy with best state so far
-            policy = GraphConditionedPolicy(
-                obs_dim=obs_dim,
-                action_dim=action_dim,
-                n_agents=n_agents,
-                hidden_dim=128,
-                graph_dim=32,
-            )
-            if best_policy_state:
-                policy.load_state_dict(best_policy_state)
+        # Update candidates with performance
+        best_reward = -float('inf')
+        for i, (perf, policy_state, origin) in enumerate(results):
+            candidates[i].performance = perf
+            logger.info(f"  {origin}: reward={perf['avg_reward']:.2f}, "
+                       f"deliveries={perf['avg_deliveries']:.1f}")
 
-            trainer = MARLTrainer(env=env, policy=policy, device=device)
+            # Track best policy
+            if perf['avg_reward'] > best_reward:
+                best_reward = perf['avg_reward']
+                best_policy_state = policy_state
 
-            for i, candidate in enumerate(candidates[:n_candidates]):
-                logger.info(f"\n  Training candidate {i+1}/{n_candidates}: {candidate.origin}")
+            if use_wandb:
+                wandb.log({
+                    "reward": perf["avg_reward"],
+                    "deliveries": perf["avg_deliveries"],
+                    "success_rate": perf["success_rate"],
+                    "candidate_origin": origin,
+                }, step=global_step + i * n_episodes)
 
-                metrics_history = []
-                for ep in range(n_episodes):
-                    metrics = trainer.train_episode(candidate.graph)
-                    metrics_history.append(metrics)
-
-                    if use_wandb:
-                        wandb.log({
-                            "ep_reward": metrics["reward"],
-                            "ep_deliveries": metrics.get("deliveries", 0),
-                            "ep_length": metrics.get("episode_length", 0),
-                            "policy_loss": metrics.get("policy_loss", 0),
-                            "value_loss": metrics.get("value_loss", 0),
-                            "entropy": metrics.get("entropy", 0),
-                        }, step=global_step + ep)
-
-                    if (ep + 1) % 50 == 0:
-                        recent = metrics_history[-50:]
-                        avg_reward = sum(m["reward"] for m in recent) / len(recent)
-                        avg_deliveries = sum(m.get("deliveries", 0) for m in recent) / len(recent)
-                        logger.info(f"    [Ep {ep+1}/{n_episodes}] reward={avg_reward:.2f}, deliveries={avg_deliveries:.1f}")
-
-                # Compute performance
-                recent = metrics_history[-max(10, n_episodes // 5):]
-                performance = {
-                    "avg_reward": sum(m["reward"] for m in recent) / len(recent),
-                    "avg_deliveries": sum(m.get("deliveries", 0) for m in recent) / len(recent),
-                    "success_rate": sum(1 for m in recent if m.get("deliveries", 0) > 0) / len(recent),
-                    "avg_policy_loss": sum(m.get("policy_loss", 0) for m in recent) / len(recent),
-                    "avg_value_loss": sum(m.get("value_loss", 0) for m in recent) / len(recent),
-                    "avg_entropy": sum(m.get("entropy", 0) for m in recent) / len(recent),
-                    "avg_episode_length": sum(m.get("episode_length", 0) for m in recent) / len(recent),
-                }
-                candidate.performance = performance
-                global_step += n_episodes
-
-                logger.info(f"    Final: reward={performance['avg_reward']:.2f}, "
-                           f"deliveries={performance['avg_deliveries']:.1f}")
-
-                if use_wandb:
-                    wandb.log({
-                        "reward": performance["avg_reward"],
-                        "deliveries": performance["avg_deliveries"],
-                        "success_rate": performance["success_rate"],
-                        "candidate_origin": candidate.origin,
-                    }, step=global_step)
-
-            # Save best policy state
-            best_policy_state = policy.state_dict()
+        global_step += n_candidates * n_episodes
 
         # Select best candidates
         candidates_with_perf = [c for c in candidates if c.performance]
@@ -408,7 +364,6 @@ def run_evolution_parallel(
 
         # Save artifacts
         import tempfile
-        import os
         import json
 
         with tempfile.TemporaryDirectory() as tmpdir:

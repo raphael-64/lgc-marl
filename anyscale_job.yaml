@@ -1,31 +1,30 @@
 name: lgc-marl-overcooked
 
-# Cluster configuration
+# Use Ray image with CUDA support
+image_uri: anyscale/ray:2.43.0-slim-py312-cu125
+
+# Compute configuration
 compute_config:
   head_node:
-    instance_type: g6.xlarge  # 4 CPU + 1 L4 GPU (runs sequential stages)
+    instance_type: m5.xlarge # CPU only - coordinates workers
   worker_nodes:
-    - instance_type: g6.xlarge  # 4 CPU + 1 L4 GPU each
-      min_workers: 0   # Scale to zero when idle (saves $$$)
-      max_workers: 4   # 4 GPUs = 16 parallel candidates at 0.25 GPU each
+    - instance_type: g6.xlarge # 4 CPU + 1 L4 GPU each
+      min_nodes: 1
+      max_nodes: 4
+      market_type: ON_DEMAND
 
-# Runtime environment
-runtime_env:
-  working_dir: .
-  pip:
-    - torch
-    - wandb
-    - weave
-    - openai
-    - "ray[default]"
-    - gymnasium
-    - overcooked-ai
-    - python-dotenv
-    - omegaconf
-    - hydra-core
-  env_vars:
-    WANDB_API_KEY: ${WANDB_API_KEY}
-    OPENAI_API_KEY: ${OPENAI_API_KEY}
+# Working directory (uploaded to cluster)
+working_dir: .
 
-# Entry point
-entrypoint: python scripts/train_overcooked_parallel.py --stages 11 --device cuda
+# Environment variables
+env_vars:
+  WANDB_API_KEY: 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
+  OPENAI_API_KEY: k-proj-E4lIuFpT87zRRy2P-4h681kLldyml_Y_dXdJ5aPAImUs007VQWTzsDSKEKbmPHDB2Mt2Phx_a6T3BlbkFJ8-nYYwcgO73qGC2pGfgdRzuctYCYSxdmVLuWRjBe39jo-WSWVvDRH6TEapGynTRgdCc19Zw0QA
+
+# Cloud - leave empty for org default, or use cloud name (not ID)
+cloud:
+
+# Entry point - install deps then run
+entrypoint: pip install torch wandb weave openai gymnasium overcooked-ai python-dotenv omegaconf hydra-core && python scripts/train_overcooked_parallel.py --stages 11 --device cuda
+
+max_retries: 0
