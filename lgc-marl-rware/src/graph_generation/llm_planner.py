@@ -77,12 +77,22 @@ class LLMGraphPlanner:
     def _generate(self, prompt: str) -> str:
         """Generate response from LLM."""
         if self.client:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=self.temperature,
-                max_tokens=2048,
-            )
+            # Newer models (gpt-4.1+, gpt-5+) use max_completion_tokens
+            # Older models use max_tokens
+            is_new_model = any(x in self.model for x in ["gpt-4.1", "gpt-5", "o1", "o3"])
+
+            params = {
+                "model": self.model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": self.temperature,
+            }
+
+            if is_new_model:
+                params["max_completion_tokens"] = 2048
+            else:
+                params["max_tokens"] = 2048
+
+            response = self.client.chat.completions.create(**params)
             return response.choices[0].message.content
         else:
             outputs = self.llm.generate([prompt], self.sampling_params)

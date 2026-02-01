@@ -44,6 +44,10 @@ class RWAREGraphWrapper(gym.Wrapper):
         except ImportError:
             raise ImportError("RWARE not installed. Install with: pip install rware")
 
+        # Disable Gymnasium's passive environment checker warnings for multi-agent envs
+        import warnings
+        warnings.filterwarnings("ignore", message=".*The reward returned by.*")
+
         env = gym.make(env_name)
         super().__init__(env)
 

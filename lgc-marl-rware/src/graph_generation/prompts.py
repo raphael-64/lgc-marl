@@ -202,6 +202,163 @@ Generate a novel graph:
 """
 
 
+# ============================================================================
+# OVERCOOKED PROMPTS
+# ============================================================================
+
+OVERCOOKED_INITIAL_GRAPH_PROMPT = """You are a task planner for the Overcooked cooking game. Two chefs must coordinate to prepare and serve soups as fast as possible.
+
+## ENVIRONMENT - {layout}
+Grid layout:
+{terrain}
+Legend: O=onion dispenser, P=pot, S=serving location, D=dish dispenser, X=counter, space=walkable
+
+## CURRENT ORDER
+{orders}
+Each soup needs 3 onions in the pot, wait for cooking, then plate and serve.
+
+## STRATEGY HINT: {strategy}
+- role_based: One chef handles ingredients, other handles plating/serving
+- parallel_soups: Both chefs work on separate pots simultaneously
+- pipeline: Assembly line - one does early steps, other does later steps
+- zone_based: Each chef owns one side of the kitchen
+- helper: One chef is "main cook", other assists and handles overflow
+- alternating: Chefs take turns on each step to avoid collisions
+
+## SUBTASK TYPES FOR OVERCOOKED
+- get_ingredient: Pick up onion from dispenser (O)
+- put_in_pot: Place held onion in pot (P)
+- wait_cooking: Wait for soup to finish cooking
+- get_dish: Pick up dish from dispenser (D)
+- plate_soup: Take cooked soup from pot onto dish
+- serve: Deliver plated soup to serving location (S)
+- put_on_counter: Place item on counter for handoff
+- get_from_counter: Pick up item another chef left
+
+## KEY COORDINATION CHALLENGES
+1. Narrow hallways cause collisions - stagger movements
+2. Only one chef can interact with each pot/dispenser at a time
+3. Handoffs via counter enable parallelism
+4. Timing matters - soup burns if left too long after cooking
+
+## OUTPUT FORMAT
+Respond with ONLY a JSON block:
+```json
+{{
+  "subtasks": [
+    {{"id": "chef0_get_onion1", "type": "get_ingredient", "agent": 0, "target": "onion", "dependencies": []}},
+    {{"id": "chef0_put_pot", "type": "put_in_pot", "agent": 0, "target": "pot_0", "dependencies": ["chef0_get_onion1"]}},
+    {{"id": "chef1_get_onion2", "type": "get_ingredient", "agent": 1, "target": "onion", "dependencies": []}},
+    {{"id": "chef1_put_pot", "type": "put_in_pot", "agent": 1, "target": "pot_0", "dependencies": ["chef1_get_onion2", "chef0_put_pot"]}}
+  ]
+}}
+```
+
+Generate the task graph for making and serving one soup:
+"""
+
+OVERCOOKED_CROSSOVER_PROMPT = """Combine the best features from two cooking coordination strategies.
+
+## PARENT 1 (avg reward: {parent1_perf:.1f})
+{parent1_graph}
+Observed: {parent1_strengths}
+
+## PARENT 2 (avg reward: {parent2_perf:.1f})
+{parent2_graph}
+Observed: {parent2_strengths}
+
+## WHAT WORKS
+{successful_patterns}
+
+## WHAT FAILS
+{failure_patterns}
+
+Keep structures both parents share. Combine complementary strengths.
+
+## OUTPUT FORMAT
+```json
+{{"subtasks": [...]}}
+```
+
+Generate the crossover:
+"""
+
+OVERCOOKED_MUTATION_PROMPT = """Improve this cooking coordination strategy based on observed failures.
+
+## CURRENT STRATEGY (avg reward: {parent_perf:.1f})
+{parent_graph}
+
+## PROBLEMS OBSERVED
+{failure_analysis}
+
+## MUTATION IDEAS
+1. Reduce collisions by staggering chef movements
+2. Add handoff via counter if chefs are blocking each other
+3. Rebalance workload if one chef is idle
+4. Change role assignments
+5. Add explicit wait/coordination points
+
+## OUTPUT FORMAT
+```json
+{{"subtasks": [...]}}
+```
+
+Generate the mutated graph:
+"""
+
+OVERCOOKED_FIX_FAILURES_PROMPT = """This cooking strategy is failing badly. Make aggressive changes.
+
+## FAILING STRATEGY
+{failing_graph}
+
+## FAILURES
+- Collision locations: {failure_points}
+- Missed timing: {coordination_failures}
+- Idle time: {bottlenecks}
+
+## WORKING PATTERNS
+{successful_patterns}
+
+Make SIGNIFICANT changes. Consider completely different role assignments.
+
+## OUTPUT FORMAT
+```json
+{{"subtasks": [...]}}
+```
+
+Generate the fixed graph:
+"""
+
+OVERCOOKED_NOVEL_GRAPH_PROMPT = """Generate a NOVEL cooking coordination strategy.
+
+## ENVIRONMENT - {layout}
+{terrain}
+
+## ORDER: {orders}
+
+## LEARNINGS
+SUCCESS patterns: {successful_patterns}
+FAILURE patterns: {failure_patterns}
+
+## NOVEL IDEAS TO TRY
+- Designated "runner" who only moves items between stations
+- Batch mode: both chefs do same task type at once
+- Counter relay: pass items via counter chain
+- One-pot focus: both chefs on same soup, max speed
+- Speculative prep: start next soup while serving current
+
+## OUTPUT FORMAT
+```json
+{{"subtasks": [...]}}
+```
+
+Generate a novel graph:
+"""
+
+# ============================================================================
+# RWARE PROMPTS (existing)
+# ============================================================================
+
 REWARD_FUNCTION_PROMPT = """Generate a reward function for training multi-agent reinforcement learning policies on warehouse tasks.
 
 ## ENVIRONMENT

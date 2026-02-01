@@ -11,7 +11,8 @@ import torch
 import torch.nn.functional as F
 from torch.optim import Adam
 
-from ..environments.rware_wrapper import RWAREGraphWrapper
+# Support multiple environment types
+# from ..environments.rware_wrapper import RWAREGraphWrapper
 from ..graph_generation.graph_types import TaskGraph
 from .graph_policy import GraphConditionedPolicy
 
@@ -93,7 +94,7 @@ class MARLTrainer:
 
     def __init__(
         self,
-        env: RWAREGraphWrapper,
+        env,  # Any multi-agent env with n_agents, step(), reset()
         policy: GraphConditionedPolicy,
         lr: float = 3e-4,
         gamma: float = 0.99,
@@ -204,12 +205,21 @@ class MARLTrainer:
 
         return trajectory
 
+    def train_episode(self, graph: TaskGraph) -> Dict[str, Any]:
+        """Train for a single episode and return metrics."""
+        results = self.train_episodes(graph, n_episodes=1)
+        return results[0] if results else {}
+
     def _collect_rollout(
         self, graph: TaskGraph, max_steps: Optional[int] = None
     ) -> None:
         """Collect rollout data from environment."""
-        obs, info = self.env.reset(graph=graph)
-        max_steps = max_steps or self.env.max_steps
+        # Support both RWARE (takes graph) and Overcooked (no graph in reset)
+        try:
+            obs, info = self.env.reset(graph=graph)
+        except TypeError:
+            obs, info = self.env.reset()
+        max_steps = max_steps or getattr(self.env, 'max_steps', getattr(self.env, 'horizon', 500))
 
         for step in range(max_steps):
             # Convert observations to tensors
@@ -227,8 +237,11 @@ class MARLTrainer:
                 value = value.item()
 
             # Step environment
-            # reward is already aggregated, individual rewards in info["agent_rewards"]
             next_obs, reward, terminated, truncated, info = self.env.step(actions)
+
+            # Handle reward - could be scalar (RWARE) or list (Overcooked)
+            if isinstance(reward, (list, tuple)):
+                reward = sum(reward)  # Sum agent rewards for shared reward
 
             # Store in buffer
             done = terminated or truncated
@@ -244,7 +257,10 @@ class MARLTrainer:
             obs = next_obs
 
             if done:
-                self.buffer.success = terminated  # Success if terminated (not truncated)
+                # Check for deliveries (works for both RWARE and Overcooked)
+                episode_stats = info.get("episode_stats", {})
+                deliveries = episode_stats.get("deliveries", info.get("deliveries", 0))
+                self.buffer.success = deliveries > 0
                 break
 
     def _compute_gae(self) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -422,7 +438,10 @@ class MARLTrainer:
                 if terminated or truncated:
                     break
 
-            successes.append(float(terminated))
+            # Success = made at least one delivery
+            episode_stats = info.get("episode_stats", {})
+            deliveries = episode_stats.get("deliveries", 0)
+            successes.append(float(deliveries > 0))
             total_rewards.append(total_reward)
             episode_lengths.append(steps)
             subtasks_completed.append(len(info.get("completed_subtasks", [])))

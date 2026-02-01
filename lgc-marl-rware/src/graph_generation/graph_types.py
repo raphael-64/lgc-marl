@@ -10,14 +10,25 @@ import networkx as nx
 
 
 class SubtaskType(Enum):
-    """Types of subtasks in warehouse environment."""
+    """Types of subtasks in multi-agent environments."""
 
+    # RWARE subtasks
     FETCH = "fetch"  # Go to shelf and pick up
     DELIVER = "deliver"  # Bring shelf to workstation
     NAVIGATE = "navigate"  # Move to position
     WAIT = "wait"  # Wait for dependency
     COORDINATE = "coordinate"  # Sync with other agent
     RETURN = "return"  # Return shelf to original position
+
+    # Overcooked subtasks
+    GET_INGREDIENT = "get_ingredient"  # Pick up onion/tomato from dispenser
+    PUT_IN_POT = "put_in_pot"  # Place ingredient in pot
+    WAIT_COOKING = "wait_cooking"  # Wait for soup to cook
+    GET_DISH = "get_dish"  # Pick up dish from dispenser
+    PLATE_SOUP = "plate_soup"  # Get soup from pot onto dish
+    SERVE = "serve"  # Deliver dish to serving location
+    PUT_ON_COUNTER = "put_on_counter"  # Place item on counter
+    GET_FROM_COUNTER = "get_from_counter"  # Pick up item from counter
 
 
 @dataclass
