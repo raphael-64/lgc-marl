@@ -2,6 +2,7 @@
 """Parallel training script for LGC-MARL on Overcooked using Ray."""
 
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Dict, Any, List, Tuple
@@ -30,7 +31,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-@ray.remote
+@ray.remote(num_cpus=1, num_gpus=0.25)  # Each worker gets 1 CPU + 0.25 GPU (4 workers per GPU)
 def train_candidate_remote(
     graph_dict: Dict,
     n_episodes: int,
@@ -119,7 +120,7 @@ def graph_to_dict(graph: TaskGraph, origin: str) -> Dict:
 
 def run_evolution_parallel(
     layout: str = "cramped_room",
-    n_stages: int = 7,
+    n_stages: int = 11,
     model: str = "gpt-5.2",
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
     use_wandb: bool = True,
@@ -128,8 +129,17 @@ def run_evolution_parallel(
     """Run progressive depth evolution with parallel candidate training."""
 
     # Initialize Ray
+    # On Anyscale, ray.init() auto-connects to the cluster
+    # Locally, it creates a local cluster
     if not ray.is_initialized():
-        ray.init(num_cpus=n_parallel, num_gpus=1 if device == "cuda" else 0)
+        if os.environ.get("ANYSCALE_SESSION_ID"):
+            # Running on Anyscale - connect to existing cluster
+            ray.init()
+            logger.info("Connected to Anyscale cluster")
+        else:
+            # Local mode
+            ray.init(num_cpus=n_parallel, num_gpus=1 if device == "cuda" else 0)
+            logger.info(f"Started local Ray cluster with {n_parallel} CPUs")
 
     # Stage configs - wide exploration, slow convergence, many transitions
     # Early stages: shallow depth, many candidates (parallel)
@@ -213,7 +223,8 @@ def run_evolution_parallel(
 
         # Decide whether to parallelize this stage
         # Parallelize early stages (many candidates, fewer episodes)
-        use_parallel = (stage_idx < 2 and n_candidates >= 4)
+        # Parallelize any stage with 4+ candidates
+        use_parallel = (n_candidates >= 4)
 
         if use_parallel:
             logger.info(f"  Running {n_candidates} candidates in PARALLEL")
@@ -451,7 +462,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--layout", default="cramped_room", help="Overcooked layout")
     parser.add_argument("--model", default="gpt-5.2", help="LLM model")
-    parser.add_argument("--stages", type=int, default=7, help="Number of evolution stages")
+    parser.add_argument("--stages", type=int, default=11, help="Number of evolution stages")
     parser.add_argument("--parallel", type=int, default=4, help="Number of parallel workers")
     parser.add_argument("--no-wandb", action="store_true", help="Disable wandb")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")

@@ -1,0 +1,31 @@
+name: lgc-marl-overcooked
+
+# Cluster configuration
+compute_config:
+  head_node:
+    instance_type: g6.xlarge  # 4 CPU + 1 L4 GPU (runs sequential stages)
+  worker_nodes:
+    - instance_type: g6.xlarge  # 4 CPU + 1 L4 GPU each
+      min_workers: 0   # Scale to zero when idle (saves $$$)
+      max_workers: 4   # 4 GPUs = 16 parallel candidates at 0.25 GPU each
+
+# Runtime environment
+runtime_env:
+  working_dir: .
+  pip:
+    - torch
+    - wandb
+    - weave
+    - openai
+    - "ray[default]"
+    - gymnasium
+    - overcooked-ai
+    - python-dotenv
+    - omegaconf
+    - hydra-core
+  env_vars:
+    WANDB_API_KEY: ${WANDB_API_KEY}
+    OPENAI_API_KEY: ${OPENAI_API_KEY}
+
+# Entry point
+entrypoint: python scripts/train_overcooked_parallel.py --stages 11 --device cuda
