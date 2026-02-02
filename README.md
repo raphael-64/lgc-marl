@@ -1,17 +1,20 @@
-# LGC-MARL with Progressive Depth Evolution on RWARE
+# Optimal Graph Discovery for LGC-MARL
 
-Implementation of LGC-MARL (LLM-based Graph Collaboration MARL) with Progressive Depth Evolution for multi-robot warehouse coordination.
+Optimal graph discovery to the existing LGC-MARL (LLM-based Graph Collaboration MARL) with Progressive Depth Evolution, Graph-Conditioned Policy
+
+![alt text](comparison.gif)
 
 ## Overview
 
 This project combines:
+
 - **LGC-MARL**: LLM-generated task decomposition graphs for multi-agent coordination
 - **Progressive Depth Evolution**: Efficient graph search through staged elimination and evolution
-- **RWARE**: Multi-Robot Warehouse environment for evaluation
+- **Other Experiments**:
 
 ### Key Features
 
-- **LLM Graph Generation**: GPT-4o-mini (or local models) generates task decomposition graphs
+- **LLM Graph Generation**: GPT-5.2 generates task decomposition graphs
 - **Graph-Conditioned Policies**: Neural policies that adapt to different graph structures
 - **Progressive Depth**: Start with many candidates + few episodes, evolve to fewer candidates + more episodes
 - **Policy Transfer**: Transfer learned weights between graph structures
@@ -53,6 +56,7 @@ pip install rware
 ### API Keys
 
 Set your OpenAI API key for graph generation:
+
 ```bash
 export OPENAI_API_KEY=your_key_here
 ```
@@ -86,7 +90,7 @@ env:
 
 # Task
 task:
-  difficulty: "medium"  # easy, medium, hard
+  difficulty: "medium" # easy, medium, hard
 
 # LLM for graph generation
 llm:
@@ -147,9 +151,11 @@ lgc-marl-rware/
 ### 1. Graph Generation
 
 The LLM generates task decomposition graphs with different strategies:
+
 - Sequential, Parallel, Pipelined, Zone-based, etc.
 
 Example graph:
+
 ```
 - fetch_shelf1: Agent_0 fetch shelf_1
 - fetch_shelf2: Agent_1 fetch shelf_2
@@ -160,6 +166,7 @@ Example graph:
 ### 2. Graph-Conditioned Policy
 
 The policy network takes:
+
 - Per-agent observations
 - Graph embedding (from GNN encoder)
 
@@ -176,6 +183,7 @@ And outputs actions for each agent.
 ### 4. Policy Transfer
 
 When evolving graphs, policies are transferred:
+
 - Clone parent policy weights
 - Add small noise for exploration
 - Continue training on new graph
@@ -192,11 +200,11 @@ python scripts/evaluate.py --checkpoint-dir ./checkpoints --render
 
 ## Compute Requirements
 
-| Configuration | Episodes | Est. Time (4× A100) |
-|--------------|----------|---------------------|
-| Default (8→4→2→1) | 2200 | ~55 min |
-| Fast (4→2→1) | 1100 | ~30 min |
-| Thorough (16→8→4→2→1) | 4400 | ~2 hours |
+| Configuration         | Episodes | Est. Time (4× A100) |
+| --------------------- | -------- | ------------------- |
+| Default (8→4→2→1)     | 2200     | ~55 min             |
+| Fast (4→2→1)          | 1100     | ~30 min             |
+| Thorough (16→8→4→2→1) | 4400     | ~2 hours            |
 
 ## Extending
 

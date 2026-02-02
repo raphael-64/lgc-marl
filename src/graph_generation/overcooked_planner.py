@@ -218,12 +218,36 @@ class OvercookedGraphPlanner:
                 if agent_id >= n_agents:
                     agent_id = agent_id % n_agents
 
-                task_type_str = subtask_data.get("type", "navigate").lower()
+                task_type_str = subtask_data.get("type", "").lower().strip()
+
+                # Map common LLM hallucinations to valid types
+                type_mapping = {
+                    "get_onion": "get_ingredient",
+                    "pickup_onion": "get_ingredient",
+                    "pick_onion": "get_ingredient",
+                    "get_tomato": "get_ingredient",
+                    "fetch_ingredient": "get_ingredient",
+                    "add_to_pot": "put_in_pot",
+                    "put_pot": "put_in_pot",
+                    "cook": "wait_cooking",
+                    "wait": "wait_cooking",
+                    "cooking": "wait_cooking",
+                    "pickup_dish": "get_dish",
+                    "get_plate": "get_dish",
+                    "plate": "plate_soup",
+                    "plating": "plate_soup",
+                    "deliver": "serve",
+                    "serving": "serve",
+                    "deliver_soup": "serve",
+                }
+                task_type_str = type_mapping.get(task_type_str, task_type_str)
+
                 try:
                     task_type = SubtaskType(task_type_str)
                 except ValueError:
-                    # Default to navigate for unknown types
-                    task_type = SubtaskType.NAVIGATE
+                    # Skip invalid task types instead of defaulting to navigate
+                    logger.warning(f"Skipping unknown task type: {task_type_str}")
+                    continue
 
                 # Handle missing id - generate one
                 subtask_id = subtask_data.get("id") or subtask_data.get("name") or f"task_{i}"

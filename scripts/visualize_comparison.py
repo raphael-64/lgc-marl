@@ -400,7 +400,7 @@ if __name__ == "__main__":
         frames, reward, deliveries = run_episode_with_render(env, policy, graph, args.max_steps)
         print(f"LGC-MARL: reward={reward:.2f}, deliveries={deliveries}")
         all_frames.append(frames)
-        labels.append("LGC-MARL")
+        labels.append("Evolutionary")
 
     # Create output
     if len(all_frames) > 1:

@@ -3,7 +3,7 @@
 # Weights & Biases
 wandb:
   project: "lgc-marl-rware"
-  run_name: null  # Auto-generated if null
+  run_name: null # Auto-generated if null
   tags: ["progressive-depth", "rware"]
 
 # Weave
@@ -17,11 +17,11 @@ env:
 
 # Task
 task:
-  difficulty: "medium"  # easy, medium, hard
+  difficulty: "medium" # easy, medium, hard
 
 # LLM
 llm:
-  model: "gpt-5.2"  # Flagship model. Alternatives: gpt-4.1 (cheaper), gpt-4.1-mini (fast)
+  model: "gpt-5.2"
   temperature: 0.7
   use_local: false
   max_retries: 3

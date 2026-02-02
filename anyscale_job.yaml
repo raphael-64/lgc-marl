@@ -16,11 +16,6 @@ compute_config:
 # Working directory (uploaded to cluster)
 working_dir: .
 
-# Environment variables
-env_vars:
-  WANDB_API_KEY: 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
-  OPENAI_API_KEY: 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
-
 # Cloud - leave empty for org default, or use cloud name (not ID)
 cloud:
 
